@@ -1,4 +1,4 @@
-use proc_macro_error::proc_macro_error;
+use proc_macro_error::{abort_call_site, proc_macro_error};
 
 #[proc_macro_error]
 #[proc_macro_derive(CustomDebug)]
@@ -7,18 +7,28 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     // dbg!(&ast);
 
-    let _name = &ast.ident;
-    // let data_struct = match &ast.data {
-    //     syn::Data::Struct(data_struct) => data_struct,
-    //     _ => abort_call_site!("expected struct"),
-    // };
+    let struct_ident = &ast.ident;
+    let data_struct = match &ast.data {
+        syn::Data::Struct(data_struct) => data_struct,
+        _ => abort_call_site!("derive(CustomDebug) expected struct"),
+    };
 
-    // let _named = match data_struct.fields {
-    //     syn::Fields::Named(fields) => fields.named,
-    //     _ => abort_call_site!("expected struct with named fields"),
-    // };
+    let named = match &data_struct.fields {
+        syn::Fields::Named(fields) => fields.named.clone(),
+        _ => abort_call_site!("derive(CustomDebug) expected struct with named fields"),
+    };
 
-    let quote = quote::quote! {};
+    let struct_fields_names = named.iter().map(|field: &syn::Field| &field.ident);
+
+    let quote = quote::quote! {
+        impl std::fmt::Debug for #struct_ident {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct(stringify!(#struct_ident))
+                    #(.field(stringify!(#struct_fields_names)c, &self.#struct_fields_names))*
+                    .finish()
+            }
+        }
+    };
 
     proc_macro::TokenStream::from(quote)
 }
