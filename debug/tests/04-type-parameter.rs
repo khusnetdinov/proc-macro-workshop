@@ -27,6 +27,15 @@ pub struct Field<T> {
     bitmask: u8,
 }
 
+// impl<T: std::fmt::Display> std::fmt::Debug for Field<T> {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("Field")
+//             .field("value", &format_args!("\"{0}\"", &self.value))
+//             .field("bitmask", &format_args!("0b{0:08b}", &self.bitmask))
+//             .finish()
+//     }
+// }
+
 fn main() {
     let f = Field {
         value: "F",

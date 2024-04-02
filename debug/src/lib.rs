@@ -1,6 +1,4 @@
-use proc_macro_error::{abort_call_site, proc_macro_error};
-
-#[proc_macro_error]
+#[proc_macro_error::proc_macro_error]
 #[proc_macro_derive(CustomDebug, attributes(debug))]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse_macro_input!(input);
@@ -10,12 +8,14 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_ident = &ast.ident;
     let data_struct = match &ast.data {
         syn::Data::Struct(data_struct) => data_struct,
-        _ => abort_call_site!("derive(CustomDebug) expected struct"),
+        _ => proc_macro_error::abort_call_site!("derive(CustomDebug) expected struct"),
     };
 
     let named = match &data_struct.fields {
         syn::Fields::Named(fields) => fields.named.clone(),
-        _ => abort_call_site!("derive(CustomDebug) expected struct with named fields"),
+        _ => proc_macro_error::abort_call_site!(
+            "derive(CustomDebug) expected struct with named fields"
+        ),
     };
 
     let struct_fields_names = named.iter().map(|field: &syn::Field| &field.ident);
@@ -30,16 +30,31 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         }
                     }
                 } else {
-                    abort_call_site!("attribute macro expected format `#[debug = \"formatter\"]`")
+                    proc_macro_error::abort_call_site!(
+                        "attribute macro expected format `#[debug = \"formatter\"]`"
+                    )
                 }
             }
         }
 
-        String::from("\"{}\"")
+        String::from("{:?}")
     });
 
+    fn add_trait_bounds(mut generics: syn::Generics) -> syn::Generics {
+        for param in &mut generics.params {
+            if let syn::GenericParam::Type(ref mut type_param) = *param {
+                type_param.bounds.push(syn::parse_quote!(std::fmt::Debug));
+            }
+        }
+
+        generics
+    }
+
+    let generics = add_trait_bounds(ast.generics);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
     let quote = quote::quote! {
-        impl std::fmt::Debug for #struct_ident {
+        impl #impl_generics std::fmt::Debug for #struct_ident #ty_generics #where_clause {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct(stringify!(#struct_ident))
                     #(.field(
