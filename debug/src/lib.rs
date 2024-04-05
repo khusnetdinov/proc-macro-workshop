@@ -1,3 +1,5 @@
+use syn::WhereClause;
+
 #[proc_macro_error::proc_macro_error]
 #[proc_macro_derive(CustomDebug, attributes(debug))]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -77,6 +79,16 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         generics
     }
 
+
+    fn add_where_clause_bounds(where_clause: Option<&WhereClause>, phantom_data_bounds: Vec<proc_macro2::TokenStream>
+    ) -> proc_macro2::TokenStream {
+        if phantom_data_bounds.is_empty() {
+            quote::quote! { #where_clause }
+        } else {
+            quote::quote! { where #(#phantom_data_bounds),* }
+        }
+    }
+
     let phantom_data_types = named
         .iter()
         .filter_map(|field: &syn::Field| {
@@ -127,19 +139,10 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let generics = add_impl_generics_bounds(ast.generics, &phantom_data_idents);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let impl_trait_fot_struct_clause = if phantom_data_types.is_empty() {
-        quote::quote! {
-            impl #impl_generics std::fmt::Debug for #struct_ident #ty_generics #where_clause
-        }
-    } else {
-        quote::quote! {
-            impl #impl_generics std::fmt::Debug for #struct_ident #ty_generics where #(#phantom_data_bounds),*
-        }
-    };
+    let where_clause = add_where_clause_bounds(where_clause, phantom_data_bounds);
 
     let quote = quote::quote! {
-        #impl_trait_fot_struct_clause {
+         impl #impl_generics std::fmt::Debug for #struct_ident #ty_generics #where_clause {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct(stringify!(#struct_ident))
                     #(.field(
