@@ -5,6 +5,24 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     // dbg!(&ast);
 
+    let inner_ty = |outer: &str, ty: &syn::Type| -> std::option::Option<syn::Type> {
+        if let syn::Type::Path(ref ty_path) = ty {
+            if ty_path.path.segments.len() == 1 && ty_path.path.segments[0].ident == outer {
+                if let syn::PathArguments::AngleBracketed(ref angle_bracketed) =
+                    ty_path.path.segments[0].arguments
+                {
+                    if let syn::GenericArgument::Type(ref unwrapped_inner_ty) =
+                        angle_bracketed.args[0]
+                    {
+                        return std::option::Option::Some(unwrapped_inner_ty.clone());
+                    }
+                }
+            }
+        }
+
+        std::option::Option::None
+    };
+
     let struct_ident = &ast.ident;
     let data_struct = match &ast.data {
         syn::Data::Struct(data_struct) => data_struct,
@@ -40,21 +58,88 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         String::from("{:?}")
     });
 
-    fn add_trait_bounds(mut generics: syn::Generics) -> syn::Generics {
+    fn add_impl_generics_bounds(
+        mut generics: syn::Generics,
+        phantom_data_idents: &Vec<syn::Ident>,
+    ) -> syn::Generics {
         for param in &mut generics.params {
             if let syn::GenericParam::Type(ref mut type_param) = *param {
-                type_param.bounds.push(syn::parse_quote!(std::fmt::Debug));
+                let is_present = phantom_data_idents
+                    .iter()
+                    .find(|&ident| *ident == type_param.ident);
+
+                if is_present.is_none() {
+                    type_param.bounds.push(syn::parse_quote!(std::fmt::Debug));
+                }
             }
         }
 
         generics
     }
 
-    let generics = add_trait_bounds(ast.generics);
+    let phantom_data_types = named
+        .iter()
+        .filter_map(|field: &syn::Field| {
+            let inner_ty = inner_ty("PhantomData", &field.ty);
+
+            if inner_ty.is_some() {
+                return Some(&field.ty);
+            }
+
+            None
+        })
+        .collect::<Vec<&syn::Type>>();
+
+    let phantom_data_bounds = phantom_data_types
+        .iter()
+        .map(|ty: &&syn::Type| {
+            quote::quote! {
+                #ty: std::fmt::Debug
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let phantom_data_inner_types = named
+        .iter()
+        .filter_map(|field: &syn::Field| {
+            let inner_ty = inner_ty("PhantomData", &field.ty);
+
+            if inner_ty.is_some() {
+                return Some(inner_ty.unwrap());
+            }
+
+            None
+        })
+        .collect::<Vec<syn::Type>>();
+
+    let phantom_data_idents = phantom_data_inner_types
+        .iter()
+        .filter_map(|ty: &syn::Type| {
+            if let syn::Type::Path(ref ty_path) = ty {
+                if ty_path.path.segments.len() == 1 {
+                    return Some(ty_path.path.segments[0].ident.clone());
+                }
+            }
+
+            None
+        })
+        .collect::<Vec<syn::Ident>>();
+
+    let generics = add_impl_generics_bounds(ast.generics, &phantom_data_idents);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+    let impl_trait_fot_struct_clause = if phantom_data_types.is_empty() {
+        quote::quote! {
+            impl #impl_generics std::fmt::Debug for #struct_ident #ty_generics #where_clause
+        }
+    } else {
+        quote::quote! {
+            impl #impl_generics std::fmt::Debug for #struct_ident #ty_generics where #(#phantom_data_bounds),*
+        }
+    };
+
     let quote = quote::quote! {
-        impl #impl_generics std::fmt::Debug for #struct_ident #ty_generics #where_clause {
+        #impl_trait_fot_struct_clause {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct(stringify!(#struct_ident))
                     #(.field(

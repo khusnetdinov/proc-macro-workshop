@@ -14,7 +14,7 @@ path = "tests/progress.rs"
 
 [[example]]
 name = "test"
-path = "tests/04-type-parameter.rs"
+path = "tests/05-phantom-data.rs"
 
 [dev-dependencies]
 trybuild = { version = "1.0.49", features = ["diff", "dissimilar"] }

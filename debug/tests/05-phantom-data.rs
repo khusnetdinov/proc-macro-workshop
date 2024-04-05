@@ -62,6 +62,19 @@ pub struct Field<T> {
     bitmask: u8,
 }
 
+// impl<T> std::fmt::Debug for Field<T>
+// where
+//    PhantomData<T>: std::fmt::Debug,
+// {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("Field")
+//             .field("marker", &format_args!("{:?}", &self.marker))
+//             .field("string", &format_args!("{:?}", &self.string))
+//             .field("bitmask", &format_args!("0b{0:08b}", &self.bitmask))
+//             .finish()
+//     }
+// }
+
 fn assert_debug<F: Debug>() {}
 
 fn main() {
