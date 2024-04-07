@@ -1,29 +1,9 @@
-use syn::WhereClause;
-
 #[proc_macro_error::proc_macro_error]
 #[proc_macro_derive(CustomDebug, attributes(debug))]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse_macro_input!(input);
 
     // dbg!(&ast);
-
-    let inner_ty = |outer: &str, ty: &syn::Type| -> std::option::Option<syn::Type> {
-        if let syn::Type::Path(ref ty_path) = ty {
-            if ty_path.path.segments.len() == 1 && ty_path.path.segments[0].ident == outer {
-                if let syn::PathArguments::AngleBracketed(ref angle_bracketed) =
-                    ty_path.path.segments[0].arguments
-                {
-                    if let syn::GenericArgument::Type(ref unwrapped_inner_ty) =
-                        angle_bracketed.args[0]
-                    {
-                        return std::option::Option::Some(unwrapped_inner_ty.clone());
-                    }
-                }
-            }
-        }
-
-        std::option::Option::None
-    };
 
     let struct_ident = &ast.ident;
     let data_struct = match &ast.data {
@@ -60,61 +40,87 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         String::from("{:?}")
     });
 
+    fn inner_ty(ty: &syn::Type, outer: Option<&str>) -> std::option::Option<syn::Type> {
+        if let syn::Type::Path(ref ty_path) = ty {
+            if ty_path.path.segments.len() != 1 {
+                return std::option::Option::None;
+            }
+
+            if let Some(outer_ty) = outer {
+                if ty_path.path.segments[0].ident != outer_ty {
+                    return std::option::Option::None;
+                }
+            }
+
+            if let syn::PathArguments::AngleBracketed(ref angle_bracketed) =
+                ty_path.path.segments[0].arguments
+            {
+                if let syn::GenericArgument::Type(ref unwrapped_inner_ty) = angle_bracketed.args[0]
+                {
+                    return std::option::Option::Some(unwrapped_inner_ty.clone());
+                }
+            }
+        }
+
+        std::option::Option::None
+    }
+
+    fn associated_ty(ty: &syn::Type, generic_types: &[&syn::Ident]) -> Option<syn::TypePath> {
+        if let Some(inner_ty) = inner_ty(ty, None) {
+            return associated_ty(&inner_ty, &generic_types).clone();
+        }
+
+        if let syn::Type::Path(type_path) = ty {
+            if type_path.path.segments.len() < 2 {
+                return None;
+            }
+
+            let type_ident = &type_path.path.segments[0].ident;
+            if generic_types.contains(&type_ident) {
+                return Some(type_path.clone());
+            }
+        }
+
+        None
+    }
+
     fn add_impl_generics_bounds(
         mut generics: syn::Generics,
         phantom_data_idents: &Vec<syn::Ident>,
+        associated_types: &Vec<syn::TypePath>,
     ) -> syn::Generics {
+        let associated_types_idents = associated_types
+            .iter()
+            .map(|ty| &ty.path.segments[0].ident)
+            .collect::<Vec<_>>();
         for param in &mut generics.params {
             if let syn::GenericParam::Type(ref mut type_param) = *param {
-                let is_present = phantom_data_idents
-                    .iter()
-                    .find(|&ident| *ident == type_param.ident);
-
-                if is_present.is_none() {
-                    type_param.bounds.push(syn::parse_quote!(std::fmt::Debug));
+                if phantom_data_idents.contains(&type_param.ident) {
+                    continue;
                 }
+
+                if associated_types_idents.contains(&&type_param.ident) {
+                    continue;
+                }
+
+                type_param.bounds.push(syn::parse_quote!(std::fmt::Debug));
             }
+        }
+
+        let where_clause = generics.make_where_clause();
+        for associated_type in associated_types {
+            where_clause
+                .predicates
+                .push(syn::parse_quote!(#associated_type : ::std::fmt::Debug))
         }
 
         generics
     }
 
-
-    fn add_where_clause_bounds(where_clause: Option<&WhereClause>, phantom_data_bounds: Vec<proc_macro2::TokenStream>
-    ) -> proc_macro2::TokenStream {
-        if phantom_data_bounds.is_empty() {
-            quote::quote! { #where_clause }
-        } else {
-            quote::quote! { where #(#phantom_data_bounds),* }
-        }
-    }
-
-    let phantom_data_types = named
-        .iter()
-        .filter_map(|field: &syn::Field| {
-            let inner_ty = inner_ty("PhantomData", &field.ty);
-
-            if inner_ty.is_some() {
-                return Some(&field.ty);
-            }
-
-            None
-        })
-        .collect::<Vec<&syn::Type>>();
-
-    let phantom_data_bounds = phantom_data_types
-        .iter()
-        .map(|ty: &&syn::Type| {
-            quote::quote! {
-                #ty: std::fmt::Debug
-            }
-        })
-        .collect::<Vec<_>>();
-
     let phantom_data_inner_types = named
         .iter()
         .filter_map(|field: &syn::Field| {
-            let inner_ty = inner_ty("PhantomData", &field.ty);
+            let inner_ty = inner_ty(&field.ty, Some("PhantomData"));
 
             if inner_ty.is_some() {
                 return Some(inner_ty.unwrap());
@@ -135,11 +141,21 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             None
         })
-        .collect::<Vec<syn::Ident>>();
+        .collect::<Vec<_>>();
 
-    let generics = add_impl_generics_bounds(ast.generics, &phantom_data_idents);
+    let generic_types = &ast
+        .generics
+        .type_params()
+        .map(|t| &t.ident)
+        .collect::<Vec<&syn::Ident>>();
+
+    let associated_types = named
+        .iter()
+        .filter_map(|field: &syn::Field| associated_ty(&field.ty, &generic_types))
+        .collect::<Vec<syn::TypePath>>();
+
+    let generics = add_impl_generics_bounds(ast.generics, &phantom_data_idents, &associated_types);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let where_clause = add_where_clause_bounds(where_clause, phantom_data_bounds);
 
     let quote = quote::quote! {
          impl #impl_generics std::fmt::Debug for #struct_ident #ty_generics #where_clause {
