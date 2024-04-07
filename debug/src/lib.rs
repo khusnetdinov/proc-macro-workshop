@@ -1,3 +1,5 @@
+use syn::spanned::Spanned;
+
 #[proc_macro_error::proc_macro_error]
 #[proc_macro_derive(CustomDebug, attributes(debug))]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -88,33 +90,69 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         mut generics: syn::Generics,
         phantom_data_idents: &Vec<syn::Ident>,
         associated_types: &Vec<syn::TypePath>,
+        predicates: &Vec<Option<syn::WherePredicate>>,
     ) -> syn::Generics {
         let associated_types_idents = associated_types
             .iter()
             .map(|ty| &ty.path.segments[0].ident)
             .collect::<Vec<_>>();
-        for param in &mut generics.params {
-            if let syn::GenericParam::Type(ref mut type_param) = *param {
-                if phantom_data_idents.contains(&type_param.ident) {
-                    continue;
-                }
 
-                if associated_types_idents.contains(&&type_param.ident) {
-                    continue;
-                }
+        if predicates.is_empty() {
+            for param in &mut generics.params {
+                if let syn::GenericParam::Type(ref mut type_param) = *param {
+                    if phantom_data_idents.contains(&type_param.ident) {
+                        continue;
+                    }
 
-                type_param.bounds.push(syn::parse_quote!(std::fmt::Debug));
+                    if associated_types_idents.contains(&&type_param.ident) {
+                        continue;
+                    }
+
+                    type_param.bounds.push(syn::parse_quote!(std::fmt::Debug));
+                }
+            }
+
+            let where_clause = generics.make_where_clause();
+            for associated_type in associated_types {
+                where_clause
+                    .predicates
+                    .push(syn::parse_quote!(#associated_type : ::std::fmt::Debug))
+            }
+        } else {
+            let predicate = predicates.first().unwrap();
+
+            if let Some(bound) = predicate {
+                let where_clause = generics.make_where_clause();
+                where_clause.predicates.push(bound.clone());
             }
         }
 
-        let where_clause = generics.make_where_clause();
-        for associated_type in associated_types {
-            where_clause
-                .predicates
-                .push(syn::parse_quote!(#associated_type : ::std::fmt::Debug))
+        generics
+    }
+
+    fn debug_attribute(attr: &syn::Attribute) -> Option<String> {
+        if attr.path().is_ident("debug") {
+            if let Some(syn::MetaNameValue { path, value, .. }) =
+                attr.parse_args::<syn::MetaNameValue>().ok()
+            {
+                if path.is_ident("bound") {
+                    let result = match value {
+                        syn::Expr::Lit(syn::ExprLit {
+                            lit: syn::Lit::Str(lit_str),
+                            ..
+                        }) => Ok(lit_str.value()),
+                        _ => Err(syn::Error::new(
+                            value.span(),
+                            "value of debug is not string",
+                        )),
+                    };
+
+                    return result.ok();
+                };
+            }
         }
 
-        generics
+        None
     }
 
     let phantom_data_inner_types = named
@@ -154,7 +192,24 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .filter_map(|field: &syn::Field| associated_ty(&field.ty, &generic_types))
         .collect::<Vec<syn::TypePath>>();
 
-    let generics = add_impl_generics_bounds(ast.generics, &phantom_data_idents, &associated_types);
+    let predicates = ast
+        .attrs
+        .iter()
+        .map(|attr: &syn::Attribute| {
+            if let Some(string) = debug_attribute(&attr) {
+                return syn::parse_str::<syn::WherePredicate>(&string).ok();
+            }
+
+            None
+        })
+        .collect::<Vec<_>>();
+
+    let generics = add_impl_generics_bounds(
+        ast.generics,
+        &phantom_data_idents,
+        &associated_types,
+        &predicates,
+    );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let quote = quote::quote! {
