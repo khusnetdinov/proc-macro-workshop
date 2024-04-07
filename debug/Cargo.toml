@@ -12,8 +12,16 @@ proc-macro = true
 name = "tests"
 path = "tests/progress.rs"
 
+[[example]]
+name = "test"
+path = "tests/08-escape-hatch.rs"
+
 [dev-dependencies]
-trybuild = { version = "1.0.49", features = ["diff"] }
+trybuild = { version = "1.0.49", features = ["diff", "dissimilar"] }
 
 [dependencies]
-# TODO
+syn = { version = "2.0.53", features = ["extra-traits"] }
+quote = "1.0.35"
+proc-macro2 = "1.0.79"
+proc-macro-error = "1.0.4"
+log = "0.4.21"

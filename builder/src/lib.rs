@@ -101,9 +101,8 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     self.#name = Some(#name);
                     self
                 }
-            })
+            });
         } else {
-
             let attr = builder_attrs(field).unwrap();
             let inner_ty = inner_ty("Vec", ty).unwrap_or(ty.clone());
 
@@ -117,10 +116,10 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     }
                 })
             } else {
-                std::option::Option::Some(syn::Error::new_spanned(
-                    &attr.meta,
-                    "expected `builder(each = \"...\")`",
-                ).to_compile_error())
+                std::option::Option::Some(
+                    syn::Error::new_spanned(&attr.meta, "expected `builder(each = \"...\")`")
+                        .to_compile_error(),
+                )
             }
         }
     });
@@ -132,7 +131,6 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         if builder_attrs(field).is_some() || inner_ty("Option", ty).is_some() {
             return quote::quote! { #name: self.#name.clone() };
         };
-
 
         quote::quote! {
             #name: self.#name.clone().ok_or(concat!(stringify!(#name), " is not set"))?

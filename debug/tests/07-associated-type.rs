@@ -31,6 +31,14 @@ pub struct Field<T: Trait> {
     values: Vec<T::Value>,
 }
 
+// impl<T: Trait> std::fmt::Debug for Field<T> where T::Value: std::fmt::Debug {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("Field")
+//             .field("values", &format_args!("{0:?}", &self.values))
+//             .finish()
+//     }
+// }
+
 fn assert_debug<F: Debug>() {}
 
 fn main() {
