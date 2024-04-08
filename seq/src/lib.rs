@@ -7,8 +7,12 @@ impl syn::parse::Parse for SeqMacroInput {
         let _in = input.parse::<syn::Token![in]>()?;
         let _start_range = input.parse::<syn::LitInt>()?;
         let _range = input.parse::<syn::Token![..]>()?;
+        let _inclusive = input.parse::<syn::Token![=]>().is_ok();
         let _end_range = input.parse::<syn::LitInt>()?;
-        let _body = input.parse::<proc_macro2::TokenStream>()?;
+
+        let content;
+        let _braces = syn::braced!(content in input);
+        let _body: proc_macro2::TokenStream = content.parse()?;
 
         Ok(Self {})
     }
