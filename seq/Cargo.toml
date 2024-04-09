@@ -14,7 +14,7 @@ path = "tests/progress.rs"
 
 [[example]]
 name = "test"
-path = "tests/02-parse-body.rs"
+path = "tests/03-expand-four-errors.rs"
 
 [dev-dependencies]
 trybuild = "1.0.49"
