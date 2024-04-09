@@ -51,12 +51,14 @@ impl Into<proc_macro::TokenStream> for SeqMacroInput {
 impl SeqMacroInput {
     fn expand(
         &self,
-        token_stream: proc_macro2::TokenStream,
+        input_stream: proc_macro2::TokenStream,
         value: i64,
     ) -> proc_macro2::TokenStream {
-        token_stream
-            .into_iter()
-            .map(|token_tree: proc_macro2::TokenTree| match token_tree {
+        let mut tokens = input_stream.into_iter();
+        let mut output_stream = proc_macro2::TokenStream::new();
+
+        while let Some(token) = tokens.next() {
+            let expanded = match token {
                 proc_macro2::TokenTree::Group(ref group) => {
                     let mut expanded = proc_macro2::Group::new(
                         group.delimiter(),
@@ -68,13 +70,36 @@ impl SeqMacroInput {
                 }
                 proc_macro2::TokenTree::Ident(ref ident) if ident == &self.ident => {
                     let mut lit = proc_macro2::Literal::i64_unsuffixed(value);
-                    lit.set_span(token_tree.span());
+                    lit.set_span(token.span());
 
                     proc_macro2::TokenTree::from(lit)
                 }
-                token_tree => token_tree,
-            })
-            .collect()
+                proc_macro2::TokenTree::Ident(ref prefix) => {
+                    let mut look_forward_iterator = tokens.clone();
+
+                    match (look_forward_iterator.next(), look_forward_iterator.next()) {
+                        (
+                            Some(proc_macro2::TokenTree::Punct(punct)),
+                            Some(proc_macro2::TokenTree::Ident(ref ident)),
+                        ) if punct.as_char() == '~' && ident == &self.ident => {
+                            tokens.next();
+                            tokens.next();
+
+                            let concat = format!("{}{}", prefix, value);
+                            let concat_ident = proc_macro2::Ident::new(&concat, token.span());
+
+                            proc_macro2::TokenTree::from(concat_ident)
+                        }
+                        _ => token,
+                    }
+                }
+                _ => token,
+            };
+
+            output_stream.extend(proc_macro2::TokenStream::from(expanded))
+        }
+
+        output_stream
     }
 }
 
