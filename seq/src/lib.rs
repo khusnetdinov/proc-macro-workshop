@@ -6,6 +6,7 @@ struct SeqMacroInput {
     ident: syn::Ident,
     range: std::ops::Range<i64>,
     body: proc_macro2::TokenStream,
+    repeated_expanded: bool,
 }
 
 impl syn::parse::Parse for SeqMacroInput {
@@ -24,31 +25,103 @@ impl syn::parse::Parse for SeqMacroInput {
         };
 
         let content;
-        let _braces = syn::braced!(content in input);
+        let _ = syn::braced!(content in input);
         let body: proc_macro2::TokenStream = content.parse()?;
 
-        Ok(Self { ident, range, body })
+        Ok(Self {
+            ident,
+            range,
+            body,
+            repeated_expanded: false,
+        })
     }
 }
 
 impl Into<proc_macro::TokenStream> for SeqMacroInput {
-    fn into(self) -> proc_macro::TokenStream {
-        let mut quote = proc_macro2::TokenStream::new();
+    fn into(mut self) -> proc_macro::TokenStream {
+        let quote = self.repeated_expand(self.body.clone());
 
-        for value in self.range.clone().into_iter() {
-            let expanded = self.expand(self.body.clone(), value);
+        if self.repeated_expanded {
+            quote.into()
+        } else {
+            self.range
+                .clone()
+                .into_iter()
+                .fold(
+                    proc_macro2::TokenStream::new(),
+                    |quote: proc_macro2::TokenStream, value: i64| {
+                        let expanded = self.expand(self.body.clone(), value);
 
-            quote = quote::quote! {
-                #quote
-                #expanded
-            }
+                        quote::quote!(#quote #expanded)
+                    },
+                )
+                .into()
         }
-
-        quote.into()
     }
 }
 
 impl SeqMacroInput {
+    fn repeated_expand(
+        &mut self,
+        input_stream: proc_macro2::TokenStream,
+    ) -> proc_macro2::TokenStream {
+        let mut tokens = input_stream.into_iter();
+        let mut output_stream = proc_macro2::TokenStream::new();
+
+        while let Some(token) = tokens.next() {
+            let expanded = match token {
+                proc_macro2::TokenTree::Group(ref group) => {
+                    let mut expanded = proc_macro2::Group::new(
+                        group.delimiter(),
+                        self.repeated_expand(group.stream()),
+                    );
+                    expanded.set_span(group.span());
+
+                    proc_macro2::TokenTree::Group(expanded)
+                }
+                proc_macro2::TokenTree::Punct(ref punct) if punct.as_char() == '#' => {
+                    let mut peek = tokens.clone();
+                    let pattern = (peek.next(), peek.next());
+
+                    match pattern {
+                        (
+                            Some(proc_macro2::TokenTree::Group(group)),
+                            Some(proc_macro2::TokenTree::Punct(ref punct)),
+                        ) if group.delimiter() == proc_macro2::Delimiter::Parenthesis
+                            && punct.as_char() == '*' =>
+                        {
+                            self.repeated_expanded = true;
+
+                            tokens.next();
+                            tokens.next();
+
+                            let repeated = self.range.clone().into_iter().fold(
+                                proc_macro2::TokenStream::new(),
+                                |quoted: proc_macro2::TokenStream, value: i64| {
+                                    let expanded = self.expand(group.stream(), value);
+
+                                    quote::quote!(#quoted #expanded)
+                                },
+                            );
+
+                            let mut expanded =
+                                proc_macro2::Group::new(proc_macro2::Delimiter::None, repeated);
+                            expanded.set_span(group.span());
+
+                            proc_macro2::TokenTree::Group(expanded)
+                        }
+                        _ => token,
+                    }
+                }
+                _ => token,
+            };
+
+            output_stream.extend(proc_macro2::TokenStream::from(expanded))
+        }
+
+        output_stream
+    }
+
     fn expand(
         &self,
         input_stream: proc_macro2::TokenStream,
@@ -75,9 +148,10 @@ impl SeqMacroInput {
                     proc_macro2::TokenTree::from(lit)
                 }
                 proc_macro2::TokenTree::Ident(ref prefix) => {
-                    let mut look_forward_iterator = tokens.clone();
+                    let mut peek = tokens.clone();
+                    let pattern = (peek.next(), peek.next());
 
-                    match (look_forward_iterator.next(), look_forward_iterator.next()) {
+                    match pattern {
                         (
                             Some(proc_macro2::TokenTree::Punct(punct)),
                             Some(proc_macro2::TokenTree::Ident(ref ident)),
