@@ -14,7 +14,7 @@ path = "tests/progress.rs"
 
 [[example]]
 name = "test"
-path = "tests/08-ident-span.rs"
+path = "tests/09-interaction-with-macrorules.rs"
 
 [dev-dependencies]
 trybuild = "1.0.49"
