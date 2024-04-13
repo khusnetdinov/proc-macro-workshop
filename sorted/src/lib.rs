@@ -1,9 +1,7 @@
-use proc_macro::TokenStream;
-
 #[proc_macro_attribute]
-pub fn sorted(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn sorted(args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let _ = args;
-    let _ = input;
+    let _output = input.clone();
 
-    unimplemented!()
+    input
 }
