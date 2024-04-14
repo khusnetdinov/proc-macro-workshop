@@ -14,7 +14,7 @@ path = "tests/progress.rs"
 
 [[example]]
 name = "test"
-path = "tests/01-parse-enum.rs"
+path = "tests/02-not-enum.rs"
 
 [dev-dependencies]
 trybuild = { version = "1.0.49" }
