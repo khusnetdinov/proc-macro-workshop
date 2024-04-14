@@ -64,20 +64,28 @@ impl syn::visit_mut::VisitMut for MatchOrder {
 
             let mut names = Vec::new();
             for arm in expr_match.arms.iter() {
-                let path = get_arm_path(&arm.pat).unwrap();
-                let name = path_as_string(&path);
+                if let Some(path) = get_arm_path(&arm.pat) {
+                    let name = path_as_string(&path);
 
-                if names.last().map(|last| &name < last).unwrap_or(false) {
-                    let next_index = names.binary_search(&name).unwrap_err();
-                    let should_be = &names[next_index];
+                    if names.last().map(|last| &name < last).unwrap_or(false) {
+                        let next_index = names.binary_search(&name).unwrap_err();
+                        let should_be = &names[next_index];
 
+                        self.errors.push(syn::Error::new_spanned(
+                            path,
+                            format!("{name} should sort before {should_be}"),
+                        ));
+                    }
+
+                    names.push(name);
+                } else {
                     self.errors.push(syn::Error::new_spanned(
-                        path,
-                        format!("{} should sort before {}", name, should_be),
+                        &arm.pat,
+                        "unsupported by #[sorted]",
                     ));
-                }
 
-                names.push(name)
+                    continue;
+                };
             }
         }
 
@@ -115,7 +123,7 @@ pub fn check(
     match_order.visit_item_fn_mut(&mut item_fn);
 
     let mut output: proc_macro2::TokenStream = quote::quote!(#item_fn).into();
-    for err in match_order.errors.iter() {
+    for err in match_order.errors.iter().take(1) {
         output.extend::<proc_macro2::TokenStream>(err.to_compile_error().into())
     }
 
