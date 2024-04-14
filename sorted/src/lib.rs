@@ -63,7 +63,16 @@ impl syn::visit_mut::VisitMut for MatchOrder {
                 .retain(|attr| !attr.path().is_ident("sorted"));
 
             let mut names = Vec::new();
+            let mut wild_pat = None;
             for arm in expr_match.arms.iter() {
+                if let Some(ref wild) = wild_pat {
+                    self.errors.push(syn::Error::new_spanned(
+                        &wild,
+                        "wildcard pattern should come last",
+                    ));
+                    break;
+                }
+
                 if let Some(path) = get_arm_path(&arm.pat) {
                     let name = path_as_string(&path);
 
@@ -78,6 +87,10 @@ impl syn::visit_mut::VisitMut for MatchOrder {
                     }
 
                     names.push(name);
+                } else if let syn::Pat::Wild(wild) = &arm.pat {
+                    wild_pat = Some(wild);
+
+                    continue;
                 } else {
                     self.errors.push(syn::Error::new_spanned(
                         &arm.pat,
