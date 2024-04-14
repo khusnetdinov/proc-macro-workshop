@@ -64,14 +64,15 @@ impl syn::visit_mut::VisitMut for MatchOrder {
 
             let mut names = Vec::new();
             for arm in expr_match.arms.iter() {
-                let name = path_as_string(&get_arm_path(&arm.pat).unwrap());
+                let path = get_arm_path(&arm.pat).unwrap();
+                let name = path_as_string(&path);
 
                 if names.last().map(|last| &name < last).unwrap_or(false) {
                     let next_index = names.binary_search(&name).unwrap_err();
                     let should_be = &names[next_index];
 
-                    self.errors.push(syn::Error::new(
-                        arm.span(),
+                    self.errors.push(syn::Error::new_spanned(
+                        path,
                         format!("{} should sort before {}", name, should_be),
                     ));
                 }

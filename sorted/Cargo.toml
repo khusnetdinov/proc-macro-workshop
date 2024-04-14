@@ -14,7 +14,7 @@ path = "tests/progress.rs"
 
 # [[example]]
 # name = "test"
-# path = "tests/05-match-expr.rs"
+# path = "tests/06-pattern-path.rs"
 
 [dev-dependencies]
 trybuild = { version = "1.0.49" }
