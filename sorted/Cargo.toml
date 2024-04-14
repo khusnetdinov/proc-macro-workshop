@@ -12,9 +12,9 @@ proc-macro = true
 name = "tests"
 path = "tests/progress.rs"
 
-[[example]]
-name = "test"
-path = "tests/03-out-of-order.rs"
+# [[example]]
+# name = "test"
+# path = "tests/04-variants-with-data.rs"
 
 [dev-dependencies]
 trybuild = { version = "1.0.49" }

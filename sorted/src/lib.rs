@@ -6,14 +6,17 @@ pub fn sorted(
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let _ = args;
+    let mut output = input.clone();
     let item = syn::parse_macro_input!(input as syn::Item);
 
-    sorted_impl(item)
-        .unwrap_or_else(|e| e.to_compile_error())
-        .into()
+    if let Err(error) = sorted_impl(&item) {
+        output.extend::<proc_macro::TokenStream>(error.to_compile_error().into())
+    };
+
+    output
 }
 
-fn sorted_impl(item: syn::Item) -> Result<proc_macro2::TokenStream, syn::Error> {
+fn sorted_impl(item: &syn::Item) -> Result<(), syn::Error> {
     if let syn::Item::Enum(item_enum) = item {
         let mut names = Vec::new();
 
@@ -33,7 +36,7 @@ fn sorted_impl(item: syn::Item) -> Result<proc_macro2::TokenStream, syn::Error> 
             names.push(name)
         }
 
-        Ok(quote::quote! { #item_enum })
+        Ok(())
     } else {
         Err(syn::Error::new(
             proc_macro2::Span::call_site(),
