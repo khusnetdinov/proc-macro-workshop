@@ -1,4 +1,5 @@
 use syn::spanned::Spanned;
+use syn::visit_mut::VisitMut;
 
 #[proc_macro_attribute]
 pub fn sorted(
@@ -43,4 +44,79 @@ fn sorted_impl(item: &syn::Item) -> Result<(), syn::Error> {
             "expected enum or match expression",
         ))
     }
+}
+
+#[derive(Default)]
+struct MatchOrder {
+    errors: Vec<syn::Error>,
+}
+
+impl syn::visit_mut::VisitMut for MatchOrder {
+    fn visit_expr_match_mut(&mut self, expr_match: &mut syn::ExprMatch) {
+        if expr_match
+            .attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("sorted"))
+        {
+            expr_match
+                .attrs
+                .retain(|attr| !attr.path().is_ident("sorted"));
+
+            let mut names = Vec::new();
+            for arm in expr_match.arms.iter() {
+                let name = path_as_string(&get_arm_path(&arm.pat).unwrap());
+
+                if names.last().map(|last| &name < last).unwrap_or(false) {
+                    let next_index = names.binary_search(&name).unwrap_err();
+                    let should_be = &names[next_index];
+
+                    self.errors.push(syn::Error::new(
+                        arm.span(),
+                        format!("{} should sort before {}", name, should_be),
+                    ));
+                }
+
+                names.push(name)
+            }
+        }
+
+        syn::visit_mut::visit_expr_match_mut(self, expr_match)
+    }
+}
+
+fn path_as_string(path: &syn::Path) -> String {
+    path.segments
+        .iter()
+        .map(|s| format!("{}", quote::quote! {#s}))
+        .collect::<Vec<_>>()
+        .join("::")
+}
+
+fn get_arm_path(arm: &syn::Pat) -> Option<syn::Path> {
+    match *arm {
+        syn::Pat::Ident(syn::PatIdent { ident: ref id, .. }) => Some(id.clone().into()),
+        syn::Pat::Path(ref p) => Some(p.path.clone()),
+        syn::Pat::Struct(ref s) => Some(s.path.clone()),
+        syn::Pat::TupleStruct(ref s) => Some(s.path.clone()),
+        _ => None,
+    }
+}
+
+#[proc_macro_attribute]
+pub fn check(
+    args: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let _ = args;
+    let mut item_fn = syn::parse_macro_input!(input as syn::ItemFn);
+
+    let mut match_order = MatchOrder::default();
+    match_order.visit_item_fn_mut(&mut item_fn);
+
+    let mut output: proc_macro2::TokenStream = quote::quote!(#item_fn).into();
+    for err in match_order.errors.iter() {
+        output.extend::<proc_macro2::TokenStream>(err.to_compile_error().into())
+    }
+
+    output.into()
 }
