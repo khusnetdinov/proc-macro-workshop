@@ -1,15 +1,29 @@
-use proc_macro::TokenStream;
-
 #[proc_macro_attribute]
-pub fn bitfield(args: TokenStream, input: TokenStream) -> TokenStream {
-    let _ = args;
-    let _ = input;
+pub fn bitfield(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let mut output = proc_macro2::TokenStream::new();
 
-    unimplemented!()
+    let item = syn::parse_macro_input!(input as syn::Item);
+    let item_struct = match item {
+        syn::Item::Struct(item_struct) => item_struct,
+        _ => unimplemented!("#[bitfield] expected struct")
+    };
+
+    let ident = &item_struct.ident;
+    let fields_tys = item_struct.fields.iter().map(|field| &field.ty);
+    let fields_bit_size = quote::quote!(0 #(+ <#fields_tys as Specifier>::BITS)*);
+
+    let quoted = quote::quote! {
+        pub struct #ident {
+            data: [u8; ( #fields_bit_size) / 8],
+        }
+    };
+
+    output.extend(quoted);
+    output.into()
 }
 
 #[proc_macro]
-pub fn bit_specifiers(_: TokenStream) -> TokenStream {
+pub fn bit_specifiers(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let mut output = proc_macro2::TokenStream::new();
     let bits = 1usize..=64;
     let specifiers = bits.map(|bit| {

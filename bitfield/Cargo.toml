@@ -9,9 +9,9 @@ publish = false
 name = "tests"
 path = "tests/progress.rs"
 
-[[example]]
-name = "test"
-path = "tests/01-specifier-types.rs"
+# [[example]]
+# name = "test"
+# path = "tests/02-storage.rs"
 
 [dev-dependencies]
 trybuild = { version = "1.0.49", features = ["diff"] }
